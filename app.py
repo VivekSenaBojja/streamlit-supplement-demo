@@ -68,7 +68,7 @@ def parse_prescription(text):
                 })
     return supplements
 
-API_KEY = "YOUR_API_KEY_HERE"  # <-- Replace with your OCR.space API key
+API_KEY = "K86044279488957"  # <-- Replace with your OCR.space API key
 
 if uploaded_file is not None:
     st.info("Running OCR, please wait a few seconds...")
