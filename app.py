@@ -4,28 +4,25 @@ from datetime import datetime, timedelta
 st.set_page_config(page_title="Daily Sachet Generator", layout="wide")
 st.title("Daily Sachet Generator")
 
-st.write("""
-Paste or type your prescription below (one supplement per line).<br>
-**Format:**  
-`Name Days Morning Noon Evening Night Dosage`  
-Example:  
-`Amura_C 2-4 1 0 0 1 200mg`  
-`Amura_V 1-3 0 1 0 0 100mg`
-""", unsafe_allow_html=True)
-
-# Time slot order for consistent output
+# Time slots and order
 time_slots = ["Morning", "Noon", "Evening", "Night"]
-
-# For display: time slot ordering and pretty printing
 time_order = {slot: i for i, slot in enumerate(time_slots)}
-display_names = {
-    "Morning": "Morning",
-    "Noon": "Noon",
-    "Evening": "Evening",
-    "Night": "Night"
-}
 
-prescription_text = st.text_area("Paste your prescription here:", height=200)
+# --- Layout: Two columns
+col1, col2 = st.columns([1, 2], gap="large")
+
+with col1:
+    st.header("Paste your prescription")
+    st.write("""
+    Paste or type your prescription below (one supplement per line).<br>
+    **Format:**  
+    `Name Days Morning Noon Evening Night Dosage`  
+    Example:  
+    `Amura_C 2-4 1 0 0 1 200mg`  
+    `Amura_V 1-3 0 1 0 0 100mg`
+    """, unsafe_allow_html=True)
+
+    prescription_text = st.text_area("Prescription input:", height=300)
 
 def parse_input_lines(text):
     supplements = []
@@ -60,8 +57,8 @@ def parse_input_lines(text):
     return supplements
 
 def build_sachets(supplements, start_date_str="2025-06-10"):
-    # Map day number -> {time slot -> [ (name, dose) ]}
-    day_sachets = {}
+    # Map (day number, slot) -> list of (name, dose)
+    sachet_dict = {}
     min_day = None
     max_day = None
     for supp in supplements:
@@ -72,9 +69,10 @@ def build_sachets(supplements, start_date_str="2025-06-10"):
                 max_day = day
             for slot in time_slots:
                 if supp["Timing"][slot] > 0:
-                    for _ in range(supp["Timing"][slot]):  # If dose >1, add multiple times
-                        day_sachets.setdefault(day, {}).setdefault(slot, []).append((supp["Name"], supp["Dose"]))
-    # Now, create a flat list of (date, dayofweek, slot, [(name, dose)])
+                    # For each dose (can be >1)
+                    for _ in range(supp["Timing"][slot]):
+                        sachet_dict.setdefault((day, slot), []).append((supp["Name"], supp["Dose"]))
+    # Prepare final sachets in strict chrono order
     sachet_list = []
     sachet_number = 1
     start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
@@ -82,12 +80,12 @@ def build_sachets(supplements, start_date_str="2025-06-10"):
         date_obj = start_date + timedelta(days=day - 1)
         date_str = date_obj.strftime("%b %dth %Y")  # e.g., Jun 10th 2025
         weekday = date_obj.strftime("%A")
-        slots_today = day_sachets.get(day, {})
         for slot in time_slots:
-            items = slots_today.get(slot, [])
+            items = sachet_dict.get((day, slot), [])
             if items:
                 sachet_list.append({
                     "Number": sachet_number,
+                    "DayNum": day,
                     "Slot": slot,
                     "Date": date_str,
                     "Weekday": weekday,
@@ -96,29 +94,39 @@ def build_sachets(supplements, start_date_str="2025-06-10"):
                 sachet_number += 1
     return sachet_list
 
-if prescription_text:
-    supplements = parse_input_lines(prescription_text)
-    sachets = build_sachets(supplements, start_date_str="2025-06-10")
-    if sachets:
-        st.subheader("Your Sachet Schedule")
-        for sachet in sachets:
-            st.markdown(f"**Sachet {sachet['Number']}: {sachet['Slot']} &nbsp;&nbsp; {sachet['Date']}**")
-            st.markdown(f"*{sachet['Weekday']}*")
-            for name, dose in sachet["Supplements"]:
-                st.write(f"{name}&nbsp;&nbsp;&nbsp;&nbsp;{dose}")
-            st.markdown("---")
+with col2:
+    st.header("Sachet schedule")
+    if 'prescription_text' in locals() and prescription_text:
+        supplements = parse_input_lines(prescription_text)
+        sachets = build_sachets(supplements, start_date_str="2025-06-10")
+        if sachets:
+            for sachet in sachets:
+                # Custom output style
+                st.markdown(
+                    f"""
+                    <div style="border:1px solid #cfcfcf; border-radius:14px; padding:14px; margin-bottom:16px;">
+                    <b style="font-size:18px;">Sachet {sachet['Number']}: Day {sachet['DayNum']}&nbsp;&nbsp;{sachet['Slot']}&nbsp;&nbsp;{sachet['Date']}</b><br>
+                    <span style="font-size:16px; color:#666;">{sachet['Weekday']}</span><br>
+                    <div style="margin-left:16px; font-size:15px;">
+                    {"<br>".join(f"{name}&nbsp;&nbsp;&nbsp;{dose}" for name, dose in sachet["Supplements"])}
+                    </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+        else:
+            st.info("No sachets generated. Please check your formatting.")
     else:
-        st.warning("No sachets generated. Check your formatting.")
-else:
-    st.info("Enter your prescription above to see your sachet schedule.")
+        st.info("Paste your prescription on the left to view the schedule.")
 
 st.markdown(
     """
     <hr>
     <sub>
-    Sachets are grouped by day/time. If multiple supplements are to be taken at the same time, they are in the same sachet. <br>
-    The schedule starts from Day 1 = June 10, 2025. Edit code for a different start date.<br>
+    Sachets are grouped by day and time, and start from Day 1 = June 10, 2025.<br>
+    If multiple supplements occur at the same time, they are combined in the same sachet.
     </sub>
     """,
     unsafe_allow_html=True
 )
+
