@@ -71,5 +71,6 @@ st.markdown(
     Use [onlineocr.net](https://www.onlineocr.net/) to convert your prescription image to text, then paste it above.<br>
     Ignores sprays. Handles imperfect OCR and most real-world formatting issues.
     </sub>
-    """, unsafe_allow_html=True)
+    """,
+    unsafe_allow_html=True
 )
