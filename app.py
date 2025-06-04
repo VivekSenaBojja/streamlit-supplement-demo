@@ -101,15 +101,30 @@ with col2:
         sachets = build_sachets(supplements, start_date_str="2025-06-10")
         if sachets:
             for sachet in sachets:
-                # Custom output style
                 st.markdown(
                     f"""
-                    <div style="border:1px solid #cfcfcf; border-radius:14px; padding:14px; margin-bottom:16px;">
-                    <b style="font-size:18px;">Sachet {sachet['Number']}: Day {sachet['DayNum']}&nbsp;&nbsp;{sachet['Slot']}&nbsp;&nbsp;{sachet['Date']}</b><br>
-                    <span style="font-size:16px; color:#666;">{sachet['Weekday']}</span><br>
-                    <div style="margin-left:16px; font-size:15px;">
-                    {"<br>".join(f"{name}&nbsp;&nbsp;&nbsp;{dose}" for name, dose in sachet["Supplements"])}
-                    </div>
+                    <div style="
+                        background-color:#fff;
+                        border-radius:16px;
+                        box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+                        padding:22px 28px 20px 28px;
+                        margin-bottom:30px;
+                        width:340px;
+                        font-family: 'Segoe UI', Arial, sans-serif;
+                        ">
+                        <div style="font-size:28px; font-weight:700; color:#232323; margin-bottom:4px;">
+                            {sachet['Slot'].upper()}
+                        </div>
+                        <div style="font-size:18px; color:#444; margin-bottom:3px;">
+                            {sachet['Weekday']}
+                        </div>
+                        <div style="font-size:18px; color:#444; margin-bottom:8px;">
+                            {sachet['Date']}
+                        </div>
+                        <hr style="margin:6px 0 10px 0; border-top:1.5px solid #ececec;">
+                        <div style="font-size:17px; color:#232323;">
+                            {"<br>".join(f"1 {name.upper()} {dose.upper()}" for name, dose in sachet["Supplements"])}
+                        </div>
                     </div>
                     """,
                     unsafe_allow_html=True
@@ -118,15 +133,3 @@ with col2:
             st.info("No sachets generated. Please check your formatting.")
     else:
         st.info("Paste your prescription on the left to view the schedule.")
-
-st.markdown(
-    """
-    <hr>
-    <sub>
-    Sachets are grouped by day and time, and start from Day 1 = June 10, 2025.<br>
-    If multiple supplements occur at the same time, they are combined in the same sachet.
-    </sub>
-    """,
-    unsafe_allow_html=True
-)
-
