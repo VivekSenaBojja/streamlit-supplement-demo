@@ -1,102 +1,123 @@
 import streamlit as st
-import requests
-import re
+from datetime import datetime, timedelta
 
-st.set_page_config(page_title="Supplement Schedule Extractor", layout="wide")
-st.title("Supplement Schedule Extractor (with OCR.space)")
+st.set_page_config(page_title="Daily Sachet Generator", layout="wide")
+st.title("Daily Sachet Generator")
 
-st.write(
-    "Upload your supplement prescription image (JPEG or PDF). "
-    "This app uses OCR.space API to extract text, then parses your supplement schedule. "
-    "**No data is stored.**"
-)
+st.write("""
+Paste or type your prescription below (one supplement per line).<br>
+**Format:**  
+`Name Days Morning Noon Evening Night Dosage`  
+Example:  
+`Amura_C 2-4 1 0 0 1 200mg`  
+`Amura_V 1-3 0 1 0 0 100mg`
+""", unsafe_allow_html=True)
 
-uploaded_file = st.file_uploader("Upload a prescription image (JPEG or PDF)", type=['jpg', 'jpeg', 'png', 'pdf'])
+# Time slot order for consistent output
+time_slots = ["Morning", "Noon", "Evening", "Night"]
 
-def ocr_space_file(file, api_key, language='eng'):
-    url = 'https://api.ocr.space/parse/image'
-    payload = {
-        'isOverlayRequired': False,
-        'apikey': api_key,
-        'language': language,
-    }
-    files = {'filename': file}
-    response = requests.post(url, files=files, data=payload)
-    result = response.json()
-    try:
-        text = result['ParsedResults'][0]['ParsedText']
-    except Exception as e:
-        st.error(f"OCR.space error: {e}\n\nRaw response: {result}")
-        return ""
-    return text
+# For display: time slot ordering and pretty printing
+time_order = {slot: i for i, slot in enumerate(time_slots)}
+display_names = {
+    "Morning": "Morning",
+    "Noon": "Noon",
+    "Evening": "Evening",
+    "Night": "Night"
+}
 
-def parse_prescription(text):
+prescription_text = st.text_area("Paste your prescription here:", height=200)
+
+def parse_input_lines(text):
     supplements = []
-    lines = text.split('\n')
-    for line in lines:
-        line = line.strip()
-        # Skip empty, spray, and irrelevant lines
-        if not line or 'Spry.' in line or 'Spry' in line or line.lower().startswith('finding summary'):
+    for line in text.strip().split('\n'):
+        if not line.strip():
             continue
-        # Only lines with Tab. or Cap.
-        if 'Tab.' in line or 'Cap.' in line or 'Tab' in line or 'Cap' in line:
-            # Fuzzy match: type, name, day range, possible doses
-            type_match = re.search(r'(Tab\.?|Cap\.?)', line)
-            name_match = re.search(r'(Tab\.?|Cap\.?)\s*([A-Za-z0-9 >\+\-]+)', line)
-            days_match = re.search(r'Day\s*(\d+)[^\d]+Day\s*(\d+)', line)
-            # Find doses (e.g. 1 - 0 - 0 - 1 or 0 - 0 - 0 - 1)
-            dose_match = re.search(r'(\d)\s*-\s*(\d)\s*-\s*(\d)\s*-\s*(\d)', line)
-            if type_match and name_match and days_match:
-                type_ = type_match.group(1).replace('.', '')
-                name = name_match.group(2).strip()
-                day_start = days_match.group(1)
-                day_end = days_match.group(2)
-                dose_morning = dose_match.group(1) if dose_match else "?"
-                dose_noon = dose_match.group(2) if dose_match else "?"
-                dose_evening = dose_match.group(3) if dose_match else "?"
-                dose_night = dose_match.group(4) if dose_match else "?"
-                timing = {}
-                if dose_morning != "0" and dose_morning != "?": timing["Morning"] = int(dose_morning)
-                if dose_noon != "0" and dose_noon != "?": timing["Noon"] = int(dose_noon)
-                if dose_evening != "0" and dose_evening != "?": timing["Evening"] = int(dose_evening)
-                if dose_night != "0" and dose_night != "?": timing["Night"] = int(dose_night)
-                supplements.append({
-                    "Name": name,
-                    "Type": type_,
-                    "Days": f"Day {day_start} - Day {day_end}",
-                    "Timing": timing if timing else "Dose missing or unclear"
-                })
+        parts = line.strip().split()
+        if len(parts) < 7:
+            continue  # skip invalid lines
+        name = parts[0]
+        days = parts[1]
+        morning, noon, evening, night = map(int, parts[2:6])
+        dose = parts[6]
+        # Handle day range
+        if '-' in days:
+            start, end = days.split('-')
+            day_range = list(range(int(start), int(end) + 1))
+        else:
+            day_range = [int(days)]
+        timing = {
+            "Morning": morning,
+            "Noon": noon,
+            "Evening": evening,
+            "Night": night
+        }
+        supplements.append({
+            "Name": name,
+            "Days": day_range,
+            "Timing": timing,
+            "Dose": dose
+        })
     return supplements
 
-API_KEY = "K86044279488957"  # <-- Replace with your OCR.space API key
+def build_sachets(supplements, start_date_str="2025-06-10"):
+    # Map day number -> {time slot -> [ (name, dose) ]}
+    day_sachets = {}
+    min_day = None
+    max_day = None
+    for supp in supplements:
+        for day in supp["Days"]:
+            if min_day is None or day < min_day:
+                min_day = day
+            if max_day is None or day > max_day:
+                max_day = day
+            for slot in time_slots:
+                if supp["Timing"][slot] > 0:
+                    for _ in range(supp["Timing"][slot]):  # If dose >1, add multiple times
+                        day_sachets.setdefault(day, {}).setdefault(slot, []).append((supp["Name"], supp["Dose"]))
+    # Now, create a flat list of (date, dayofweek, slot, [(name, dose)])
+    sachet_list = []
+    sachet_number = 1
+    start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
+    for day in range(min_day, max_day + 1):
+        date_obj = start_date + timedelta(days=day - 1)
+        date_str = date_obj.strftime("%b %dth %Y")  # e.g., Jun 10th 2025
+        weekday = date_obj.strftime("%A")
+        slots_today = day_sachets.get(day, {})
+        for slot in time_slots:
+            items = slots_today.get(slot, [])
+            if items:
+                sachet_list.append({
+                    "Number": sachet_number,
+                    "Slot": slot,
+                    "Date": date_str,
+                    "Weekday": weekday,
+                    "Supplements": items
+                })
+                sachet_number += 1
+    return sachet_list
 
-if uploaded_file is not None:
-    st.info("Running OCR, please wait a few seconds...")
-    text = ocr_space_file(uploaded_file, API_KEY)
-    if text:
-        st.subheader("OCR Extracted Text")
-        st.text_area("Extracted Text", text, height=200)
-        supplements = parse_prescription(text)
-        if supplements:
-            st.subheader("Extracted Supplement Schedule")
-            for supp in supplements:
-                st.markdown(f"**{supp['Name']} ({supp['Type']}) — {supp['Days']}**")
-                if isinstance(supp['Timing'], dict):
-                    for time, dose in supp['Timing'].items():
-                        st.write(f"{time}: {dose}")
-                else:
-                    st.write(supp['Timing'])
-                st.markdown("---")
-        else:
-            st.warning("No valid supplements found in the extracted text. Try a clearer image or different prescription format.")
+if prescription_text:
+    supplements = parse_input_lines(prescription_text)
+    sachets = build_sachets(supplements, start_date_str="2025-06-10")
+    if sachets:
+        st.subheader("Your Sachet Schedule")
+        for sachet in sachets:
+            st.markdown(f"**Sachet {sachet['Number']}: {sachet['Slot']} &nbsp;&nbsp; {sachet['Date']}**")
+            st.markdown(f"*{sachet['Weekday']}*")
+            for name, dose in sachet["Supplements"]:
+                st.write(f"{name}&nbsp;&nbsp;&nbsp;&nbsp;{dose}")
+            st.markdown("---")
+    else:
+        st.warning("No sachets generated. Check your formatting.")
+else:
+    st.info("Enter your prescription above to see your sachet schedule.")
 
 st.markdown(
     """
     <hr>
     <sub>
-    ⚡️ This MVP uses [OCR.space API](https://ocr.space/) for live OCR and supports JPEG, PNG, and PDF.<br>
-    If extraction fails, try scanning a clearer image or re-uploading.<br>
-    Ignores sprays. Handles most standard supplement prescription formats.
+    Sachets are grouped by day/time. If multiple supplements are to be taken at the same time, they are in the same sachet. <br>
+    The schedule starts from Day 1 = June 10, 2025. Edit code for a different start date.<br>
     </sub>
     """,
     unsafe_allow_html=True
